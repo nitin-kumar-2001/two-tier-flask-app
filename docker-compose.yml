@@ -1,8 +1,5 @@
-version: "3.8"
-
 services:
   mysql:
-    user: "${UID}:${GID}" 
     image: mysql:5.7
     container_name: mysql
     environment:
@@ -11,11 +8,11 @@ services:
       MYSQL_USER: admin
       MYSQL_PASSWORD: admin
     volumes:
-      - ./mysql-data:/var/lib/mysql
-      - ./message.sql:/docker-entrypoint-initdb.d/message.sql  
+      - mysql-data:/var/lib/mysql
     networks:
-      - twotier
+      - two_tier_network
     healthcheck:
+      # Password 'root' hai toh yahan vahi use karein
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
       interval: 10s
       timeout: 5s
@@ -23,20 +20,24 @@ services:
       start_period: 60s
 
   flask-app:
-    image: trainwithshubham/two-tier-flask-app:latest
+    build:
+      context: .
     container_name: flask-app
     ports:
       - "5000:5000"
     environment:
-      MYSQL_HOST: mysql
-      MYSQL_USER: root
+      # AB YEH APP.PY SE MATCH KAREGA ✅
+      MYSQL_HOST: mysql          # 'mysql' service ka naam hai
+      MYSQL_USER: root           # Root use kar rahe hain toh password 'root' hoga
       MYSQL_PASSWORD: root
       MYSQL_DB: devops
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
     networks:
-      - twotier
+      - two_tier_network
     restart: always
+    # Indentation thik kar di
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
       interval: 10s
@@ -44,5 +45,8 @@ services:
       retries: 5
       start_period: 30s
 
+volumes:
+  mysql-data:
+
 networks:
-  twotier:
+  two_tier_network:
