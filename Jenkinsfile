@@ -1,53 +1,62 @@
 pipeline {
-    agent none 
+    agent none // Global agent none, taaki stages apne labels khud choose karein
+
     environment {
-        IMAGE_NAME = "nitingumberdev/two-tier-flask-app"
-        DOCKER_CREDS = "DockerHubCreds"
+        DOCKER_HUB_USER = "nitingumber" 
+        DOCKER_CREDS_ID = "DockerHubCreds"
+        IMAGE_NAME = "two-tier-flask-app"
     }
 
     stages {
-        // --- DEV FLOW ---
-        stage('Build & Deploy to Dev') {
-            when { branch 'dev' }
-            agent { label 'dev-node' } // Pura kaam isi machine par hoga
+        // --- STAGE 1: DEV ENVIRONMENT ---
+        stage('Build & Deploy to DEV') {
+            when { branch 'test' } // Agar branch 'test' hai (ya aapka dev branch name)
+            agent { label 'dev-node' } // Sirf dev-node machine par chalega
             steps {
-                checkout scm // Yahan 'any' ki jagah isi machine par clone karo
+                echo "Running on DEV Agent..."
+                checkout scm // Sahi URL aur branch apne aap utha lega
+                
                 sh "docker build -t ${IMAGE_NAME}:dev ."
                 
-                // Docker Compose use karna best hai
-                sh "docker compose down || true" 
-                sh "docker compose up -d"
-                echo "Dev site ready on Dev Agent IP!"
+                echo "Cleaning old containers on Dev..."
+                sh "docker rm -f flask-dev-app || true"
+                
+                echo "Starting Dev Container..."
+                sh "docker run -d -p 5000:5000 --name flask-dev-app ${IMAGE_NAME}:dev"
             }
         }
 
-        // --- PROD FLOW (Centralized Image) ---
-        stage('Production Pipeline') {
-            when { branch 'master' }
-            // Yahan hum pehle image banakar push karenge (kisi bhi machine par)
-            // Phir Prod Agent par pull karke deploy karenge
-            stages {
-                stage('Build & Push') {
-                    agent any
-                    steps {
-                        checkout scm
-                        withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDS}", 
-                            passwordVariable: 'PASS', usernameVariable: 'USER')]) {
-                            sh "docker build -t ${IMAGE_NAME}:latest ."
-                            sh "echo $PASS | docker login -u $USER --password-stdin"
-                            sh "docker push ${IMAGE_NAME}:latest"
-                        }
-                    }
+        // --- STAGE 2: PRODUCTION ENVIRONMENT ---
+        stage('Build, Push & Deploy to PROD') {
+            when { branch 'master' } // Sirf master branch ke liye
+            agent { label 'prod-node' } // Sirf prod-node machine par chalega
+            steps {
+                echo "Running on PROD Agent..."
+                checkout scm
+                
+                withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDS_ID}", 
+                    passwordVariable: 'PASS', usernameVariable: 'USER')]) {
+                    
+                    echo "Building Production Image..."
+                    sh "docker build -t ${USER}/${IMAGE_NAME}:latest ."
+                    
+                    echo "Pushing to Docker Hub..."
+                    sh "echo \$PASS | docker login -u \$USER --password-stdin"
+                    sh "docker push ${USER}/${IMAGE_NAME}:latest"
                 }
-                stage('Deploy to Prod') {
-                    agent { label 'prod-node' }
-                    steps {
-                        // Prod Agent par Docker Hub se image apne aap pull ho jayegi via Compose
-                        sh "docker compose pull"
-                        sh "docker compose up -d"
-                    }
-                }
+
+                echo "Deploying to Production..."
+                // Yahan aap Docker Compose use kar sakte hain
+                sh "docker compose down || true"
+                sh "docker compose up -d"
             }
+        }
+    }
+
+    post {
+        always {
+            cleanWs() // Workspace cleanup
+            echo "Pipeline finished on ${env.BRANCH_NAME} branch"
         }
     }
 }
