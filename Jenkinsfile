@@ -1,38 +1,22 @@
-pipeline{
-    
-    agent any
-    
-    stages{
-        stage("Code Clone"){
-            steps{
-                git url: "https://github.com/nitin-gumber/two-tier-flask-app.git", branch: "master"
+pipeline {
+    agent none // Hum global agent nahi le rahe
+
+    stages {
+        stage('Build & Deploy to Test') {
+            when { branch 'test' } // Sirf 'test' branch par chalega
+            agent { label 'test-agent' } // Sirf Test machine par chalega
+            steps {
+                sh "docker build -t flask-app-test ."
+                sh "docker run -d -p 5001:5000 flask-app-test"
             }
         }
-        stage("Build Container Image"){
-            steps{
-                sh "docker build -t two-tier-flask-app ."
-            }
-        }
-        stage("Test"){
-            steps{
-                echo "Developer/Tester tests likh ke dega ..."
-            }
-        }
-        stage("Push to Docker Hub"){
-            steps{
-                withCredentials([usernamePassword(credentialsId:"DockerHubCreds",
-                    passwordVariable: "dockerHubPass",
-                    usernameVariable: "dockerHubUser"
-                )]){
-                    sh "docker login -u ${env.dockerHubUser} -p ${env.dockerHubPass}"
-                    sh "docker tag two-tier-flask-app ${env.dockerHubUser}/two-tier-flask-app"
-                    sh "docker push ${env.dockerHubUser}/two-tier-flask-app:latest"
-                }
-            }
-        }
-        stage("Craete and Deploy Container"){
-            steps{
-                sh "docker compose up -d"
+
+        stage('Build & Deploy to Production') {
+            when { branch 'master' } // Sirf 'master' branch par chalega
+            agent { label 'prod-agent' } // Sirf Production machine par chalega
+            steps {
+                sh "docker build -t flask-app-prod ."
+                sh "docker run -d -p 80:5000 flask-app-prod"
             }
         }
     }
